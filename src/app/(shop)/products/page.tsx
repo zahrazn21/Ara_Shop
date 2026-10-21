@@ -15,6 +15,9 @@ type SearchParams = Promise<{
   category?: string;
   q?: string;
   view?: string;
+  minPrice?: string;
+  maxPrice?: string;
+  inStock?: string;
 }>;
 
 export default async function ProductsPage({

@@ -1,12 +1,28 @@
 "use server";
-import { Prisma, type ProductStatus } from "@prisma/client";
+import {
+  Prisma,
+  type Gender,
+  type ProductStatus,
+  type SkinType,
+  type VolumeUnit,
+} from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/session";
-import { PRODUCT_STATUS_LABEL } from "@/lib/labels";
+import {
+  GENDER_LABEL,
+  PRODUCT_STATUS_LABEL,
+  SKIN_TYPE_LABEL,
+  VOLUME_UNIT_LABEL,
+} from "@/lib/labels";
 import { getCategoryOptions } from "@/lib/admin-queries";
-import { deleteUploads, MAX_IMAGES, saveProductImages, UploadError } from "@/lib/upload";
+import {
+  deleteUploads,
+  MAX_IMAGES,
+  saveProductImages,
+  UploadError,
+} from "@/lib/upload";
 
 export type EditState = { ok?: boolean; error?: string } | undefined;
 
@@ -31,8 +47,13 @@ function parseBasics(fd: FormData) {
   if (!slug) return { error: "اسلاگ را وارد کنید." };
   if (!(status in PRODUCT_STATUS_LABEL)) return { error: "وضعیت نامعتبر است." };
   if (price === null || price < 0) return { error: "قیمت فروش معتبر نیست." };
-  if (originalRaw.trim() !== "" && (originalPrice === null || originalPrice <= price))
-    return { error: "قیمت قبل از تخفیف باید بیشتر از قیمت فروش باشد (یا خالی بماند)." };
+  if (
+    originalRaw.trim() !== "" &&
+    (originalPrice === null || originalPrice <= price)
+  )
+    return {
+      error: "قیمت قبل از تخفیف باید بیشتر از قیمت فروش باشد (یا خالی بماند).",
+    };
   if (stock === null || stock < 0) return { error: "موجودی معتبر نیست." };
 
   return {
@@ -52,7 +73,53 @@ function parseBasics(fd: FormData) {
     },
   };
 }
+function parseDetails(fd: FormData) {
+  const has = (obj: object, k: string) => Object.hasOwn(obj, k);
+  const text = (k: string) => str(fd, k).trim() || null;
 
+  const volumeRaw = str(fd, "volume").trim();
+  const volume = volumeRaw === "" ? null : Number(volumeRaw);
+  if (volume !== null && (!Number.isFinite(volume) || volume < 0))
+    return { error: "حجم یا وزن معتبر نیست." };
+
+  const unit = str(fd, "volumeUnit");
+  if (!has(VOLUME_UNIT_LABEL, unit)) return { error: "واحد حجم نامعتبر است." };
+
+  const gender = str(fd, "gender");
+  if (gender && !has(GENDER_LABEL, gender))
+    return { error: "گروه مخاطب نامعتبر است." };
+
+  const skinTypes = [...new Set(fd.getAll("skinTypes").map(String))];
+  if (skinTypes.some((s) => !has(SKIN_TYPE_LABEL, s)))
+    return { error: "نوع پوست نامعتبر است." };
+
+  const paoRaw = str(fd, "paoMonths").trim();
+  const paoMonths = paoRaw === "" ? null : toInt(paoRaw);
+  if (paoRaw !== "" && (paoMonths === null || paoMonths < 0 || paoMonths > 120))
+    return { error: "مدت مصرف پس از باز کردن معتبر نیست." };
+
+  return {
+    data: {
+      subtitle: text("subtitle"),
+      volume,
+      volumeUnit: (volume === null ? null : unit) as VolumeUnit | null,
+      countryOfOrigin: text("countryOfOrigin"),
+      barcode: text("barcode"),
+      healthLicense: text("healthLicense"),
+      ingredients: text("ingredients"),
+      usage: text("usage"),
+      warnings: text("warnings"),
+      skinTypes: skinTypes as SkinType[],
+      gender: (gender || null) as Gender | null,
+      paoMonths,
+      tags: str(fd, "tags")
+        .split(/[,،]/)
+        .map((t) => t.trim())
+        .filter(Boolean)
+        .slice(0, 20),
+    },
+  };
+}
 function revalidateShop(...slugs: string[]) {
   revalidatePath("/admin/products");
   revalidatePath("/");
@@ -65,12 +132,46 @@ export async function getProductForEdit(id: string) {
   const p = await prisma.product.findUnique({
     where: { id },
     select: {
-      id: true, name: true, slug: true, price: true, originalPrice: true, brand: true,
-      description: true, features: true, status: true, stock: true,
-      categoryId: true, sku: true, images: true, specifications: true,
+      id: true,
+      name: true,
+      slug: true,
+      price: true,
+      originalPrice: true,
+      brand: true,
+      description: true,
+      features: true,
+      status: true,
+      stock: true,
+      categoryId: true,
+      sku: true,
+      images: true,
+      specifications: true,
+      subtitle: true,
+      volume: true,
+      volumeUnit: true,
+      countryOfOrigin: true,
+      barcode: true,
+      healthLicense: true,
+      ingredients: true,
+      usage: true,
+      warnings: true,
+      skinTypes: true,
+      gender: true,
+      paoMonths: true,
+      tags: true,
       variants: {
         orderBy: { createdAt: "asc" },
-        select: { id: true, color: true, colorHex: true, image: true, size: true, number: true, sku: true, stock: true, priceDiff: true },
+        select: {
+          id: true,
+          color: true,
+          colorHex: true,
+          image: true,
+          size: true,
+          number: true,
+          sku: true,
+          stock: true,
+          priceDiff: true,
+        },
       },
     },
   });
@@ -83,11 +184,18 @@ export async function getProductForEdit(id: string) {
   };
 }
 
-export async function updateProduct(_: EditState, fd: FormData): Promise<EditState> {
+export async function updateProduct(
+  _: EditState,
+  fd: FormData,
+): Promise<EditState> {
   await requireAdmin();
 
   const parsed = parseBasics(fd);
   if ("error" in parsed) return { error: parsed.error };
+
+  const details = parseDetails(fd);
+  if ("error" in details) return { error: details.error };
+
   const { stock, ...basics } = parsed.data;
 
   const id = str(fd, "id");
@@ -98,7 +206,12 @@ export async function updateProduct(_: EditState, fd: FormData): Promise<EditSta
   if (!current) return { error: "محصول پیدا نشد." };
 
   const categoryId = str(fd, "categoryId");
-  if (!(await prisma.category.findUnique({ where: { id: categoryId }, select: { id: true } })))
+  if (
+    !(await prisma.category.findUnique({
+      where: { id: categoryId },
+      select: { id: true },
+    }))
+  )
     return { error: "یک دسته‌بندی انتخاب کنید." };
 
   const v = parseVariants(str(fd, "variants"), basics.price);
@@ -106,27 +219,36 @@ export async function updateProduct(_: EditState, fd: FormData): Promise<EditSta
 
   const oldIds = current.variants.map((x) => x.id);
   const sentIds = v.variants.flatMap((x) => (x.id ? [x.id] : []));
-  if (sentIds.some((x) => !oldIds.includes(x))) return { error: "اطلاعات تنوع‌ها معتبر نیست." };
+  if (sentIds.some((x) => !oldIds.includes(x)))
+    return { error: "اطلاعات تنوع‌ها معتبر نیست." };
   const removeIds = oldIds.filter((x) => !sentIds.includes(x));
 
   let keep: string[] = [];
   try {
     const raw = JSON.parse(str(fd, "keepImages") || "[]");
-    if (Array.isArray(raw)) keep = raw.filter((x): x is string => typeof x === "string");
+    if (Array.isArray(raw))
+      keep = raw.filter((x): x is string => typeof x === "string");
   } catch {
     return { error: "اطلاعات عکس‌ها معتبر نیست." };
   }
-  if (keep.some((u) => !current.images.includes(u))) return { error: "اطلاعات عکس‌ها معتبر نیست." };
+  if (keep.some((u) => !current.images.includes(u)))
+    return { error: "اطلاعات عکس‌ها معتبر نیست." };
 
-  const files = fd.getAll("images").filter((f): f is File => f instanceof File && f.size > 0);
-  if (keep.length + files.length === 0) return { error: "حداقل یک عکس لازم است." };
-  if (keep.length + files.length > MAX_IMAGES) return { error: `حداکثر ${MAX_IMAGES} عکس مجاز است.` };
+  const files = fd
+    .getAll("images")
+    .filter((f): f is File => f instanceof File && f.size > 0);
+  if (keep.length + files.length === 0)
+    return { error: "حداقل یک عکس لازم است." };
+  if (keep.length + files.length > MAX_IMAGES)
+    return { error: `حداکثر ${MAX_IMAGES} عکس مجاز است.` };
 
   let urls: string[] = [];
   try {
     urls = await saveProductImages(files);
   } catch (e) {
-    return { error: e instanceof UploadError ? e.message : "ذخیره‌ی عکس‌ها انجام نشد." };
+    return {
+      error: e instanceof UploadError ? e.message : "ذخیره‌ی عکس‌ها انجام نشد.",
+    };
   }
   const images = [...keep, ...urls];
   const removedImages = current.images.filter((u) => !keep.includes(u));
@@ -140,6 +262,7 @@ export async function updateProduct(_: EditState, fd: FormData): Promise<EditSta
       where: { id },
       data: {
         ...basics,
+        ...details.data,
         categoryId,
         sku: str(fd, "sku").trim() || null,
         image: images[0],
@@ -151,15 +274,19 @@ export async function updateProduct(_: EditState, fd: FormData): Promise<EditSta
           update: variantData
             .filter((x) => x.id)
             .map(({ id: vid, ...data }) => ({ where: { id: vid! }, data })),
-          create: variantData.filter((x) => !x.id).map(({ id: _id, ...data }) => data),
+          create: variantData
+            .filter((x) => !x.id)
+            .map(({ id: _id, ...data }) => data),
         },
       },
     });
   } catch (e) {
     await deleteUploads(urls);
     if (e instanceof Prisma.PrismaClientKnownRequestError) {
-      if (e.code === "P2002") return { error: "اسلاگ یا کد SKU تکراری است." };
-      if (e.code === "P2003") return { error: "تنوعی که در سفارش یا سبد استفاده شده قابل حذف نیست." };
+      if (e.code === "P2002")
+        return { error: "اسلاگ، کد SKU یا ترکیب تنوع‌ها تکراری است." };
+      if (e.code === "P2003")
+        return { error: "تنوعی که در سفارش یا سبد استفاده شده قابل حذف نیست." };
     }
     return { error: "ذخیره انجام نشد. دوباره تلاش کنید." };
   }
@@ -171,8 +298,13 @@ export async function updateProduct(_: EditState, fd: FormData): Promise<EditSta
 
 type VariantInput = {
   id: string | null;
-  color: string | null; colorHex: string | null; size: string | null; number: string | null;
-  sku: string | null; stock: number; priceDiff: number;
+  color: string | null;
+  colorHex: string | null;
+  size: string | null;
+  number: string | null;
+  sku: string | null;
+  stock: number;
+  priceDiff: number;
   imageIndex: number | null;
 };
 
@@ -183,7 +315,10 @@ function withImages(variants: VariantInput[], images: string[]) {
   }));
 }
 
-function parseVariants(raw: string, basePrice: number): { error: string } | { variants: VariantInput[] } {
+function parseVariants(
+  raw: string,
+  basePrice: number,
+): { error: string } | { variants: VariantInput[] } {
   let list: unknown;
   try {
     list = JSON.parse(raw || "[]");
@@ -199,26 +334,50 @@ function parseVariants(raw: string, basePrice: number): { error: string } | { va
 
   for (const [i, v] of list.entries()) {
     const n = i + 1;
-    const clean = (x: unknown) => (typeof x === "string" && x.trim() ? x.trim() : null);
+    const clean = (x: unknown) =>
+      typeof x === "string" && x.trim() ? x.trim() : null;
     const colorHex = clean(v?.colorHex);
-    const color = clean(v?.color), size = clean(v?.size), number = clean(v?.number), sku = clean(v?.sku);
+    const color = clean(v?.color),
+      size = clean(v?.size),
+      number = clean(v?.number),
+      sku = clean(v?.sku);
     const stock = toInt(String(v?.stock ?? "0"));
     const priceDiff = toInt(String(v?.priceDiff ?? "0") || "0");
 
-    if (!color && !size && !number) return { error: `تنوع ${n}: حداقل یکی از رنگ، سایز یا شماره را پر کنید.` };
-    if (stock === null || stock < 0) return { error: `تنوع ${n}: موجودی معتبر نیست.` };
-    if (priceDiff === null) return { error: `تنوع ${n}: اختلاف قیمت معتبر نیست.` };
-    if (basePrice + priceDiff < 0) return { error: `تنوع ${n}: قیمت نهایی نمی‌تواند منفی باشد.` };
+    if (!color && !size && !number)
+      return {
+        error: `تنوع ${n}: حداقل یکی از رنگ، سایز یا شماره را پر کنید.`,
+      };
+    if (stock === null || stock < 0)
+      return { error: `تنوع ${n}: موجودی معتبر نیست.` };
+    if (priceDiff === null)
+      return { error: `تنوع ${n}: اختلاف قیمت معتبر نیست.` };
+    if (basePrice + priceDiff < 0)
+      return { error: `تنوع ${n}: قیمت نهایی نمی‌تواند منفی باشد.` };
 
     const key = [color, size, number].join("|");
-    if (seen.has(key)) return { error: `تنوع ${n}: ترکیب رنگ/سایز/شماره تکراری است.` };
+    if (seen.has(key))
+      return { error: `تنوع ${n}: ترکیب رنگ/سایز/شماره تکراری است.` };
     seen.add(key);
     if (sku) {
       if (skus.has(sku)) return { error: `تنوع ${n}: کد SKU تکراری است.` };
       skus.add(sku);
     }
-    const imageIndex = Number.isInteger(v?.imageIndex) && v.imageIndex >= 0 ? (v.imageIndex as number) : null;
-    out.push({ id: clean(v?.id), color, colorHex, size, number, sku, stock, priceDiff, imageIndex });
+    const imageIndex =
+      Number.isInteger(v?.imageIndex) && v.imageIndex >= 0
+        ? (v.imageIndex as number)
+        : null;
+    out.push({
+      id: clean(v?.id),
+      color,
+      colorHex,
+      size,
+      number,
+      sku,
+      stock,
+      priceDiff,
+      imageIndex,
+    });
   }
   return { variants: out };
 }
@@ -239,7 +398,10 @@ function parseSpecs(raw: string): Record<string, string> | null {
   }
 }
 
-export async function createProduct(_: EditState, fd: FormData): Promise<EditState> {
+export async function createProduct(
+  _: EditState,
+  fd: FormData,
+): Promise<EditState> {
   await requireAdmin();
 
   const parsed = parseBasics(fd);
@@ -247,23 +409,37 @@ export async function createProduct(_: EditState, fd: FormData): Promise<EditSta
   const { stock, ...basics } = parsed.data;
 
   const categoryId = str(fd, "categoryId");
-  if (!(await prisma.category.findUnique({ where: { id: categoryId }, select: { id: true } })))
+  if (
+    !(await prisma.category.findUnique({
+      where: { id: categoryId },
+      select: { id: true },
+    }))
+  )
     return { error: "یک دسته‌بندی انتخاب کنید." };
 
   const v = parseVariants(str(fd, "variants"), basics.price);
   if ("error" in v) return { error: v.error };
 
-  const files = fd.getAll("images").filter((f): f is File => f instanceof File && f.size > 0);
+  const files = fd
+    .getAll("images")
+    .filter((f): f is File => f instanceof File && f.size > 0);
   if (files.length === 0) return { error: "حداقل یک عکس انتخاب کنید." };
 
-  if (await prisma.product.findUnique({ where: { slug: basics.slug }, select: { id: true } }))
+  if (
+    await prisma.product.findUnique({
+      where: { slug: basics.slug },
+      select: { id: true },
+    })
+  )
     return { error: "این اسلاگ قبلاً برای محصول دیگری استفاده شده است." };
 
   let urls: string[] = [];
   try {
     urls = await saveProductImages(files);
   } catch (e) {
-    return { error: e instanceof UploadError ? e.message : "ذخیره‌ی عکس‌ها انجام نشد." };
+    return {
+      error: e instanceof UploadError ? e.message : "ذخیره‌ی عکس‌ها انجام نشد.",
+    };
   }
 
   const specs = parseSpecs(str(fd, "specifications"));
@@ -279,14 +455,18 @@ export async function createProduct(_: EditState, fd: FormData): Promise<EditSta
         stock: v.variants.length ? 0 : stock,
         ...(specs && { specifications: specs }),
         ...(v.variants.length && {
-          variants: { create: withImages(v.variants, urls).map(({ id: _id, ...data }) => data) },
+          variants: {
+            create: withImages(v.variants, urls).map(
+              ({ id: _id, ...data }) => data,
+            ),
+          },
         }),
       },
     });
   } catch (e) {
     await deleteUploads(urls);
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002")
-      return { error: "اسلاگ یا کد SKU یکی از تنوع‌ها تکراری است." };
+      return { error: "اسلاگ، کد SKU یا ترکیب تنوع‌ها تکراری است." };
     return { error: "ذخیره انجام نشد. دوباره تلاش کنید." };
   }
 

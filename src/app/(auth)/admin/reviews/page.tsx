@@ -7,6 +7,7 @@ import { faDate, toman } from "@/lib/format";
 import { REVIEW_STATUS_LABEL } from "@/lib/labels";
 import ReviewActions from "@/components/admin/ReviewActions";
 import Stars from "@/components/product/Stars";
+import { redirect } from "next/navigation";
 
 export const metadata: Metadata = { title: "نظرها | پنل مدیریت ارغوان شاپ" };
 
@@ -22,14 +23,24 @@ const BADGE: Record<ReviewStatus, string> = {
 
 const STATUSES = Object.keys(REVIEW_STATUS_LABEL) as ReviewStatus[];
 
-export default async function AdminReviewsPage({ searchParams }: { searchParams: SearchParams }) {
+export default async function AdminReviewsPage({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
   const sp = await searchParams;
-  const q = one(sp.q)?.trim() || undefined;
+  const q = one(sp.q)?.trim().slice(0, 100) || undefined;
   const rawStatus = one(sp.status);
-  // پیش‌فرض: نظرهای منتظر تأیید؛ status=all یعنی همه
   const status: ReviewStatus | undefined =
-    rawStatus === "all" ? undefined : STATUSES.includes(rawStatus as ReviewStatus) ? (rawStatus as ReviewStatus) : "PENDING";
-  const page = Math.max(1, Number(one(sp.page)) || 1);
+    rawStatus === "all"
+      ? undefined
+      : STATUSES.includes(rawStatus as ReviewStatus)
+        ? (rawStatus as ReviewStatus)
+        : "PENDING";
+  const rawPage = Number(one(sp.page));
+  const page = Number.isFinite(rawPage)
+    ? Math.min(Math.max(1, Math.floor(rawPage)), 10000)
+    : 1;
 
   const [{ items, total, pageCount }, counts] = await Promise.all([
     getAdminReviews({ status, q, page }),
@@ -47,16 +58,22 @@ export default async function AdminReviewsPage({ searchParams }: { searchParams:
 
   const allCount = counts.PENDING + counts.APPROVED + counts.REJECTED;
   const tabs = [
-    ...STATUSES.map((s) => ({ key: s as string, label: REVIEW_STATUS_LABEL[s], count: counts[s] })),
+    ...STATUSES.map((s) => ({
+      key: s as string,
+      label: REVIEW_STATUS_LABEL[s],
+      count: counts[s],
+    })),
     { key: "all", label: "همه", count: allCount },
   ];
   const activeKey = status ?? "all";
-
+  if (page > pageCount) redirect(href({ page: pageCount }));
   return (
     <div className="max-w-4xl space-y-5">
       <div className="flex items-baseline justify-between">
         <h1 className="text-lg font-bold text-plum-900">نظرها</h1>
-        <span className="text-xs text-plum-600">{toman(total)} نظر در این فیلتر</span>
+        <span className="text-xs text-plum-600">
+          {toman(total)} نظر در این فیلتر
+        </span>
       </div>
 
       <nav aria-label="فیلتر وضعیت" className="flex flex-wrap gap-2">
@@ -66,7 +83,9 @@ export default async function AdminReviewsPage({ searchParams }: { searchParams:
             href={href({ status: t.key })}
             aria-current={t.key === activeKey ? "page" : undefined}
             className={`rounded-full px-4 py-1.5 text-xs ${
-              t.key === activeKey ? "bg-plum-700 text-white" : "bg-white text-plum-700 ring-1 ring-blush-300 hover:bg-blush-100"
+              t.key === activeKey
+                ? "bg-plum-700 text-white"
+                : "bg-white text-plum-700 ring-1 ring-blush-300 hover:bg-blush-100"
             }`}
           >
             {t.label} ({toman(t.count)})
@@ -82,17 +101,26 @@ export default async function AdminReviewsPage({ searchParams }: { searchParams:
           placeholder="جستجو در متن نظر، نام محصول یا نام کاربری"
           className="min-w-52 flex-1 rounded-lg border border-blush-300 bg-white px-3 py-2"
         />
-        <button className="rounded-lg bg-plum-700 px-4 py-2 text-white hover:bg-plum-900">جستجو</button>
+        <button className="rounded-lg bg-plum-700 px-4 py-2 text-white hover:bg-plum-900">
+          جستجو
+        </button>
       </form>
 
       {items.length === 0 ? (
         <p className="rounded-xl border border-dashed border-blush-300 p-8 text-center text-sm text-plum-600">
-          {q ? "نظری با این جستجو پیدا نشد." : status === "PENDING" ? "نظر منتظر تأییدی وجود ندارد." : "نظری پیدا نشد."}
+          {q
+            ? "نظری با این جستجو پیدا نشد."
+            : status === "PENDING"
+              ? "نظر منتظر تأییدی وجود ندارد."
+              : "نظری پیدا نشد."}
         </p>
       ) : (
         <ul className="space-y-4">
           {items.map((r) => (
-            <li key={r.id} className="space-y-3 rounded-xl border border-blush-200 bg-white p-4">
+            <li
+              key={r.id}
+              className="space-y-3 rounded-xl border border-blush-200 bg-white p-4"
+            >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-3">
                   <Image
@@ -110,25 +138,39 @@ export default async function AdminReviewsPage({ searchParams }: { searchParams:
                     {r.product.name}
                   </Link>
                 </div>
-                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${BADGE[r.status]}`}>
+                <span
+                  className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${BADGE[r.status]}`}
+                >
                   {REVIEW_STATUS_LABEL[r.status]}
                 </span>
               </div>
 
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-plum-600">
                 <Stars value={r.rating} />
-                <span className="font-bold text-plum-900">{r.user.username}</span>
-                <time dateTime={r.createdAt.toISOString()}>{faDate(r.createdAt)}</time>
+                <span className="font-bold text-plum-900">
+                  {r.user.username}
+                </span>
+                <time dateTime={r.createdAt.toISOString()}>
+                  {faDate(r.createdAt)}
+                </time>
               </div>
 
-              <p className="whitespace-pre-line text-sm leading-7">{r.comment}</p>
+              <p className="whitespace-pre-line text-sm leading-7">
+                {r.comment}
+              </p>
 
               {r.imageUrls.length > 0 && (
                 <ul className="flex flex-wrap gap-2">
                   {r.imageUrls.map((src) => (
                     <li key={src}>
                       <a href={src} target="_blank" rel="noreferrer">
-                        <Image width={500} height={500} src={src} alt="" className="size-16 rounded-lg border border-blush-200 object-cover" />
+                        <Image
+                          width={500}
+                          height={500}
+                          src={src}
+                          alt=""
+                          className="size-16 rounded-lg border border-blush-200 object-cover"
+                        />
                       </a>
                     </li>
                   ))}
@@ -136,7 +178,9 @@ export default async function AdminReviewsPage({ searchParams }: { searchParams:
               )}
 
               {r.status === "REJECTED" && r.adminNote && (
-                <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">دلیل رد: {r.adminNote}</p>
+                <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+                  دلیل رد: {r.adminNote}
+                </p>
               )}
 
               <ReviewActions id={r.id} status={r.status} />
@@ -146,9 +190,15 @@ export default async function AdminReviewsPage({ searchParams }: { searchParams:
       )}
 
       {pageCount > 1 && (
-        <nav aria-label="صفحه‌بندی" className="flex items-center justify-center gap-3 text-sm">
+        <nav
+          aria-label="صفحه‌بندی"
+          className="flex items-center justify-center gap-3 text-sm"
+        >
           {page > 1 && (
-            <Link href={href({ page: page - 1 })} className="text-plum-700 hover:underline">
+            <Link
+              href={href({ page: page - 1 })}
+              className="text-plum-700 hover:underline"
+            >
               قبلی
             </Link>
           )}
@@ -156,7 +206,10 @@ export default async function AdminReviewsPage({ searchParams }: { searchParams:
             صفحه {toman(page)} از {toman(pageCount)}
           </span>
           {page < pageCount && (
-            <Link href={href({ page: page + 1 })} className="text-plum-700 hover:underline">
+            <Link
+              href={href({ page: page + 1 })}
+              className="text-plum-700 hover:underline"
+            >
               بعدی
             </Link>
           )}

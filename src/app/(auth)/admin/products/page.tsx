@@ -30,14 +30,16 @@ export default async function AdminProductsPage({
     rawStatus && rawStatus in PRODUCT_STATUS_LABEL
       ? (rawStatus as ProductStatus)
       : undefined;
-  const page = Math.max(1, Number(one(sp.page)) || 1);
+  const rawPage = Number(one(sp.page));
+  const page = Number.isFinite(rawPage)
+    ? Math.min(Math.max(1, Math.floor(rawPage)), 10000)
+    : 1;
 
   const { items, total, pageCount } = await getAdminProducts({
     q,
     status,
     page,
   });
-
   const pageHref = (n: number) => {
     const u = new URLSearchParams();
     if (q) u.set("q", q);

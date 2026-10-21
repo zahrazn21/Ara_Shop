@@ -4,5 +4,5 @@ import AuthForm from "@/components/auth/AuthForm";
 
 export default async function Page() {
   if (await getCurrentUser()) redirect("/");
-  return <AuthForm mode="login" />;
+  return <AuthForm />;
 }

@@ -5,8 +5,8 @@ import path from "path";
 export const MAX_IMAGES = 6;
 export const MAX_IMAGE_BYTES = 3 * 1024 * 1024; 
 
-const PUBLIC = path.join(process.cwd(), "public");
-const DIR = path.join(PUBLIC, "uploads", "products");
+export const UPLOAD_ROOT = path.resolve(process.env.UPLOAD_DIR ?? "uploads");
+const DIR = path.join(UPLOAD_ROOT, "products");
 const EXT = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" } as const;
 
 export class UploadError extends Error {}
@@ -21,7 +21,7 @@ function sniff(b: Buffer): keyof typeof EXT | null {
 }
 
 export const MAX_REVIEW_IMAGES = 3;
-const REVIEW_DIR = path.join(PUBLIC, "uploads", "reviews");
+const REVIEW_DIR = path.join(UPLOAD_ROOT, "reviews");
 
 async function saveImages(files: File[], dir: string, urlBase: string, max: number): Promise<string[]> {
   if (files.length > max) throw new UploadError(`حداکثر ${max} عکس مجاز است.`);
@@ -50,6 +50,17 @@ export const saveProductImages = (files: File[]) => saveImages(files, DIR, "/upl
 export const saveReviewImages = (files: File[]) =>
   saveImages(files, REVIEW_DIR, "/uploads/reviews", MAX_REVIEW_IMAGES);
 
+const CATEGORY_DIR = path.join(UPLOAD_ROOT, "categories");
+
+export async function saveCategoryImage(file: File): Promise<string> {
+  const [url] = await saveImages([file], CATEGORY_DIR, "/uploads/categories", 1);
+  return url;
+}
+
 export async function deleteUploads(urls: string[]) {
-  await Promise.all(urls.map((u) => unlink(path.join(PUBLIC, u)).catch(() => {})));
+  await Promise.all(
+    urls.map((u) =>
+      unlink(path.join(UPLOAD_ROOT, u.replace(/^\/uploads\//, ""))).catch(() => {}),
+    ),
+  );
 }

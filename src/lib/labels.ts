@@ -43,3 +43,12 @@ export const REVIEW_STATUS_LABEL: Record<ReviewStatus, string> = {
   APPROVED: "تأییدشده",
   REJECTED: "ردشده",
 };
+
+export const ORDER_STATUS_BADGE: Record<OrderStatus, string> = {
+  PENDING_PAYMENT: "bg-amber-100 text-amber-800",
+  PAID: "bg-sky-100 text-sky-800",
+  PROCESSING: "bg-violet-100 text-violet-800",
+  SHIPPED: "bg-indigo-100 text-indigo-800",
+  DELIVERED: "bg-green-100 text-green-800",
+  CANCELLED: "bg-red-100 text-red-700",
+};

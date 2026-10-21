@@ -5,8 +5,8 @@ import { usePathname } from "next/navigation";
 const ITEMS = [
   { href: "/admin", label: "داشبورد", ready: true },
   { href: "/admin/products", label: "محصولات", ready: true },
-  { href: "/admin/categories", label: "دسته‌بندی‌ها", ready: false },
-  { href: "/admin/orders", label: "سفارش‌ها", ready: false },
+  { href: "/admin/categories", label: "دسته‌بندی‌ها", ready: true },
+  { href: "/admin/orders", label: "سفارش‌ها", ready: true },
   { href: "/admin/reviews", label: "نظرها", ready: true },
   { href: "/admin/coupons", label: "کوپن‌ها", ready: false },
 ];

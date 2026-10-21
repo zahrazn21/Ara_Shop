@@ -9,7 +9,9 @@ import {
 
 const NEW_DAYS = 14;
 
-function toCard(rows: Awaited<ReturnType<typeof findCards>>): ProductCardData[] {
+function toCard(
+  rows: Awaited<ReturnType<typeof findCards>>,
+): ProductCardData[] {
   const now = Date.now();
   return rows.map(({ createdAt, ...rest }) => ({
     ...rest,
@@ -25,20 +27,23 @@ const findCards = (args: { orderBy: object; take: number }) =>
   });
 
 export const getFeaturedProducts = async () =>
-  toCard(await findCards({ orderBy: [{ reviewCount: "desc" }, { createdAt: "desc" }], take: 12 }));
+  toCard(
+    await findCards({
+      orderBy: [{ reviewCount: "desc" }, { createdAt: "desc" }],
+      take: 12,
+    }),
+  );
 
 export const getNewestProducts = async () =>
   toCard(await findCards({ orderBy: { createdAt: "desc" }, take: 4 }));
 
-
-
 export const getCategories = () =>
   prisma.category.findMany({
     where: { parentId: null },
+    orderBy: { createdAt: "asc" },
     select: { id: true, name: true, slug: true, image: true },
     take: 8,
   });
-
 
 const PAGE_SIZE = 12;
 
@@ -52,23 +57,93 @@ const sorts = {
 export type ProductSort = keyof typeof sorts;
 
 export async function getProducts({
-  page = 1, sort = "popular", category, categoryIds, q, minPrice, maxPrice, inStock,
+  page = 1,
+  sort = "popular",
+  category,
+  categoryIds,
+  q,
+  minPrice,
+  maxPrice,
+  inStock,
 }: {
-  page?: number; sort?: ProductSort; category?: string; categoryIds?: string[]; q?: string;
-  minPrice?: number; maxPrice?: number; inStock?: boolean;
+  page?: number;
+  sort?: ProductSort;
+  category?: string;
+  categoryIds?: string[];
+  q?: string;
+  minPrice?: number;
+  maxPrice?: number;
+  inStock?: boolean;
 }) {
   const where = {
     status: "ACTIVE" as const,
-    ...(category && { category: { slug: category } }),
-    ...(categoryIds && { categoryId: { in: categoryIds } }),
-    ...(q && { name: { contains: q, mode: "insensitive" as const } }),
+
+    ...(category && {
+      category: { slug: category },
+    }),
+
+    ...(categoryIds && {
+      categoryId: { in: categoryIds },
+    }),
+
     ...((minPrice || maxPrice) && {
-      price: { ...(minPrice && { gte: minPrice }), ...(maxPrice && { lte: maxPrice }) },
+      price: {
+        ...(minPrice && { gte: minPrice }),
+        ...(maxPrice && { lte: maxPrice }),
+      },
     }),
-    ...(inStock && {
-      OR: [{ stock: { gt: 0 } }, { variants: { some: { stock: { gt: 0 } } } }],
-    }),
+
+    AND: [
+      ...(q
+        ? [
+            {
+              OR: [
+                {
+                  name: {
+                    contains: q,
+                    mode: "insensitive" as const,
+                  },
+                },
+                {
+                  brand: {
+                    contains: q,
+                    mode: "insensitive" as const,
+                  },
+                },
+                {
+                  description: {
+                    contains: q,
+                    mode: "insensitive" as const,
+                  },
+                },
+                {
+                  category: {
+                    is: {
+                      name: {
+                        contains: q,
+                        mode: "insensitive" as const,
+                      },
+                    },
+                  },
+                },
+              ],
+            },
+          ]
+        : []),
+
+      ...(inStock
+        ? [
+            {
+              OR: [
+                { stock: { gt: 0 } },
+                { variants: { some: { stock: { gt: 0 } } } },
+              ],
+            },
+          ]
+        : []),
+    ],
   };
+
   const [rows, total] = await Promise.all([
     prisma.product.findMany({
       where,
@@ -98,66 +173,75 @@ export async function getPriceBounds() {
   return { min, max: Math.max(max, min + 10000) };
 }
 
+export const getProductBySlug = cache(
+  async (rawSlug: string): Promise<ProductDetail | null> => {
+    let slug = rawSlug;
+    try {
+      slug = decodeURIComponent(rawSlug);
+    } catch {
+      return null;
+    }
+    const p = await prisma.product.findFirst({
+      where: { slug, status: "ACTIVE" },
+      include: productDetailInclude,
+    });
+    if (!p) return null;
 
-
-export const getProductBySlug = cache(async (rawSlug: string): Promise<ProductDetail | null> => {
-  const slug = decodeURIComponent(rawSlug);
-  const p = await prisma.product.findFirst({
-    where: { slug, status: "ACTIVE" },
-    include: productDetailInclude,
-  });
-  if (!p) return null;
-
-  return {
-    id: p.id,
-    name: p.name,
-    slug: p.slug,
-    price: p.price,
-    originalPrice: p.originalPrice,
-    image: p.image,
-    images: p.images?.length ? p.images : [p.image],
-    brand: p.brand,
-    sku: p.sku,
-    description: p.description,
-    features: p.features ?? [],
-    specifications: (p.specifications as Record<string, string> | null) ?? null,
-    subtitle: p.subtitle,
-    volume: p.volume,
-    volumeUnit: p.volumeUnit,
-    countryOfOrigin: p.countryOfOrigin,
-    barcode: p.barcode,
-    healthLicense: p.healthLicense,
-    ingredients: p.ingredients,
-    usage: p.usage,
-    warnings: p.warnings,
-    skinTypes: p.skinTypes ?? [],
-    gender: p.gender,
-    paoMonths: p.paoMonths,
-    tags: p.tags ?? [],
-    stock: p.stock,
-    status: p.status,
-    rating: p.rating,
-    reviewCount: p.reviewCount,
-    category: p.category,
-    variants: p.variants.map((v) => ({
-      id: v.id,
-      color: v.color,
-      colorHex: v.colorHex,
-      image: v.image,
-      size: v.size,
-      number: v.number,
-      sku: v.sku,
-      stock: v.stock,
-      priceDiff: v.priceDiff,
-    })),
-  };
-});
+    return {
+      id: p.id,
+      name: p.name,
+      slug: p.slug,
+      price: p.price,
+      originalPrice: p.originalPrice,
+      image: p.image,
+      images: p.images?.length ? p.images : [p.image],
+      brand: p.brand,
+      sku: p.sku,
+      description: p.description,
+      features: p.features ?? [],
+      specifications:
+        (p.specifications as Record<string, string> | null) ?? null,
+      subtitle: p.subtitle,
+      volume: p.volume,
+      volumeUnit: p.volumeUnit,
+      countryOfOrigin: p.countryOfOrigin,
+      barcode: p.barcode,
+      healthLicense: p.healthLicense,
+      ingredients: p.ingredients,
+      usage: p.usage,
+      warnings: p.warnings,
+      skinTypes: p.skinTypes ?? [],
+      gender: p.gender,
+      paoMonths: p.paoMonths,
+      tags: p.tags ?? [],
+      stock: p.stock,
+      status: p.status,
+      rating: p.rating,
+      reviewCount: p.reviewCount,
+      category: p.category,
+      variants: p.variants.map((v) => ({
+        id: v.id,
+        color: v.color,
+        colorHex: v.colorHex,
+        image: v.image,
+        size: v.size,
+        number: v.number,
+        sku: v.sku,
+        stock: v.stock,
+        priceDiff: v.priceDiff,
+      })),
+    };
+  },
+);
 
 const RELATED_LIMIT = 12;
 const RELATED_MIN = 8;
 
-
-export async function getRelatedProducts(categoryId: string, excludeId: string, brand?: string | null) {
+export async function getRelatedProducts(
+  categoryId: string,
+  excludeId: string,
+  brand?: string | null,
+) {
   const sameCategory = await prisma.product.findMany({
     where: { status: "ACTIVE", categoryId, id: { not: excludeId } },
     select: productCardSelect,
@@ -179,7 +263,6 @@ export async function getRelatedProducts(categoryId: string, excludeId: string, 
   return toCard(rows);
 }
 
-
 export const getProductReviews = (productId: string, take = 10) =>
   prisma.review.findMany({
     where: { productId, status: "APPROVED" },
@@ -194,7 +277,6 @@ export const getProductReviews = (productId: string, take = 10) =>
       user: { select: { username: true } },
     },
   });
-
 
 export const getCategoryBySlug = cache(async (rawSlug: string) => {
   let slug = rawSlug;

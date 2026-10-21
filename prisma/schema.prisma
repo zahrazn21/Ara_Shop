@@ -14,8 +14,10 @@ datasource db {
 model User {
   id        String   @id @default(cuid())
   username  String   @unique
-  email     String   @unique
-  password  String
+  email     String?  @unique
+  password  String?
+  phone     String?  @unique
+  name      String?
   role      Role     @default(USER)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -27,6 +29,17 @@ model User {
   addresses  Address[]
 
   @@map("users")
+}
+
+model OtpCode {
+  id        String   @id @default(cuid())
+  phone     String   @unique
+  codeHash  String
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  sentAt    DateTime @default(now())
+
+  @@map("otp_codes")
 }
 
 enum Role {
@@ -143,7 +156,6 @@ model Product {
   @@index([categoryId])
   @@index([brand])
   @@index([status])
-  @@index([slug])
 
   @@map("products")
 }
@@ -203,7 +215,6 @@ model ProductVariant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([productId, color, size, number])
   @@index([productId])
   @@map("product_variants")
 }

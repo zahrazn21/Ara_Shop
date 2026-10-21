@@ -1,5 +1,5 @@
 "use server";
-import type { ReviewStatus } from "@prisma/client";
+import { Prisma, type ReviewStatus } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
@@ -66,10 +66,12 @@ export async function submitReview(_: ReviewFormState, fd: FormData): Promise<Re
     await prisma.review.create({
       data: { userId: user.id, productId: product.id, rating, comment, imageUrls: urls },
     });
-  } catch {
-    await deleteUploads(urls);
-    return { error: "ثبت نظر انجام نشد. دوباره تلاش کنید." };
-  }
+  }  catch (e) {
+  await deleteUploads(urls);
+  if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002")
+    return { error: "شما قبلاً برای این محصول نظر ثبت کرده‌اید." };
+  return { error: "ثبت نظر انجام نشد. دوباره تلاش کنید." };
+}
 
   revalidatePath("/admin/reviews");
   revalidatePath("/admin");

@@ -7,14 +7,14 @@ const hrefs: Record<string, string> = {
 };
 
 const cols = [
-  { title: "فروشگاه", links: ["محصولات", "برندها", "پرفروش‌ها", "جدیدترین‌ها", "درباره ما"] },
+  { title: "فروشگاه", links: ["محصولات", "پرفروش‌ها", "جدیدترین‌ها", "درباره ما"] },
   { title: "راهنما", links: ["نحوه ثبت سفارش", "روش‌های ارسال", "بازگشت کالا", "سوالات متداول"] },
   { title: "پشتیبانی", links: ["تماس با ما", "پشتیبانی آنلاین", "شرایط و قوانین", "حریم خصوصی"] },
 ];
 
 export default function Footer() {
   return (
-    <footer className="bg-plum-900 text-blush-100">
+    <footer className="bg-plum-700 text-blush-100">
       <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 md:grid-cols-[1.2fr_repeat(3,1fr)]">
         <div>
           <p className="font-brand text-3xl">Ara Shop</p>

@@ -9,7 +9,7 @@ import {
   shippingFor,
   type PricedLine,
 } from "@/lib/checkout";
-
+import { cancelExpiredOrders } from "@/lib/orders";
 
 export type AddressItem = {
   id: string;
@@ -33,7 +33,7 @@ const digits = (s: string) =>
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 
 export async function createAddress(
-  fd: FormData
+  fd: FormData,
 ): Promise<{ ok: true; address: AddressItem } | { ok: false; error: string }> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "ابتدا وارد حساب خود شوید." };
@@ -46,14 +46,26 @@ export async function createAddress(
   const addressLine = str(fd, "addressLine");
   const title = str(fd, "title");
 
-  if (fullName.length < 3) return { ok: false, error: "نام و نام خانوادگی گیرنده را وارد کنید." };
-  if (!/^09\d{9}$/.test(phone)) return { ok: false, error: "شماره موبایل باید با ۰۹ شروع شود و ۱۱ رقم باشد." };
-  if (!province || !city) return { ok: false, error: "استان و شهر را وارد کنید." };
-  if (!/^\d{10}$/.test(postalCode)) return { ok: false, error: "کد پستی باید ۱۰ رقم باشد." };
-  if (addressLine.length < 10) return { ok: false, error: "نشانی کامل را وارد کنید (حداقل ۱۰ حرف)." };
+  if (fullName.length < 3)
+    return { ok: false, error: "نام و نام خانوادگی گیرنده را وارد کنید." };
+  if (!/^09\d{9}$/.test(phone))
+    return {
+      ok: false,
+      error: "شماره موبایل باید با ۰۹ شروع شود و ۱۱ رقم باشد.",
+    };
+  if (!province || !city)
+    return { ok: false, error: "استان و شهر را وارد کنید." };
+  if (!/^\d{10}$/.test(postalCode))
+    return { ok: false, error: "کد پستی باید ۱۰ رقم باشد." };
+  if (addressLine.length < 10)
+    return { ok: false, error: "نشانی کامل را وارد کنید (حداقل ۱۰ حرف)." };
 
   const count = await prisma.address.count({ where: { userId: user.id } });
-  if (count >= MAX_ADDRESSES) return { ok: false, error: `حداکثر ${MAX_ADDRESSES} آدرس می‌توانید ثبت کنید.` };
+  if (count >= MAX_ADDRESSES)
+    return {
+      ok: false,
+      error: `حداکثر ${MAX_ADDRESSES} آدرس می‌توانید ثبت کنید.`,
+    };
 
   const address = await prisma.address.create({
     data: {
@@ -65,11 +77,18 @@ export async function createAddress(
       city,
       postalCode,
       addressLine,
-      isDefault: count === 0, 
+      isDefault: count === 0,
     },
     select: {
-      id: true, title: true, fullName: true, phone: true, province: true,
-      city: true, postalCode: true, addressLine: true, isDefault: true,
+      id: true,
+      title: true,
+      fullName: true,
+      phone: true,
+      province: true,
+      city: true,
+      postalCode: true,
+      addressLine: true,
+      isDefault: true,
     },
   });
   return { ok: true, address };
@@ -87,8 +106,12 @@ export type Quote =
     }
   | { ok: false; error: string };
 
-export async function quoteOrder(lines: unknown, couponCode?: string): Promise<Quote> {
-  if (!(await getCurrentUser())) return { ok: false, error: "ابتدا وارد حساب خود شوید." };
+export async function quoteOrder(
+  lines: unknown,
+  couponCode?: string,
+): Promise<Quote> {
+  if (!(await getCurrentUser()))
+    return { ok: false, error: "ابتدا وارد حساب خود شوید." };
 
   try {
     const items = await priceLines(lines);
@@ -106,22 +129,29 @@ export async function quoteOrder(lines: unknown, couponCode?: string): Promise<Q
     }
 
     const shipping = shippingFor(subtotal);
-    return { ok: true, items, subtotal, shipping, discount, total: subtotal - discount + shipping, couponError };
+    return {
+      ok: true,
+      items,
+      subtotal,
+      shipping,
+      discount,
+      total: subtotal - discount + shipping,
+      couponError,
+    };
   } catch (e) {
     if (e instanceof CheckoutError) return { ok: false, error: e.message };
     return { ok: false, error: "محاسبه‌ی سفارش انجام نشد. دوباره تلاش کنید." };
   }
 }
 
-
 export async function placeOrder(
   lines: unknown,
   addressId: string,
-  couponCode?: string
+  couponCode?: string,
 ): Promise<{ ok: true; orderId: string } | { ok: false; error: string }> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "ابتدا وارد حساب خود شوید." };
-
+  await cancelExpiredOrders().catch(() => {});
   try {
     const orderId = await prisma.$transaction(async (tx) => {
       const address = await tx.address.findFirst({
@@ -140,7 +170,8 @@ export async function placeOrder(
         const n = await tx.$executeRaw`
           UPDATE "coupons" SET "usedCount" = "usedCount" + 1
           WHERE "id" = ${c.id} AND ("usageLimit" IS NULL OR "usedCount" < "usageLimit")`;
-        if (n === 0) throw new CheckoutError("ظرفیت استفاده از این کد تمام شده است.");
+        if (n === 0)
+          throw new CheckoutError("ظرفیت استفاده از این کد تمام شده است.");
         discount = c.discount;
         couponId = c.id;
       }
@@ -152,10 +183,15 @@ export async function placeOrder(
               data: { stock: { decrement: it.quantity } },
             })
           : await tx.product.updateMany({
-              where: { id: it.productId, status: "ACTIVE", stock: { gte: it.quantity } },
+              where: {
+                id: it.productId,
+                status: "ACTIVE",
+                stock: { gte: it.quantity },
+              },
               data: { stock: { decrement: it.quantity } },
             });
-        if (r.count === 0) throw new CheckoutError(`موجودی «${it.name}» کافی نیست.`);
+        if (r.count === 0)
+          throw new CheckoutError(`موجودی «${it.name}» کافی نیست.`);
       }
 
       const shipping = shippingFor(subtotal);

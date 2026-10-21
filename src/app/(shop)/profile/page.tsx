@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/session";
 import { logout } from "@/app/actions/auth";
+import ProfileForm from "@/components/profile/ProfileForm";
 
 export const metadata: Metadata = {
   title: "حساب کاربری | ارغوان شاپ",
@@ -17,7 +18,7 @@ export default async function ProfilePage() {
 
   const rows = [
     { label: "نام کاربری", value: user.username },
-    { label: "ایمیل", value: user.email, ltr: true },
+    { label: "شماره موبایل", value: user.phone ?? "—", ltr: true },
     { label: "نقش", value: ROLE_LABEL[user.role] },
   ];
 
@@ -33,6 +34,7 @@ export default async function ProfilePage() {
           </div>
         ))}
       </dl>
+            <ProfileForm username={user.username} name={user.name ?? ""} />
 
       <div className="mt-5 flex flex-wrap items-center gap-3">
         {user.role === "ADMIN" && (
@@ -47,7 +49,14 @@ export default async function ProfilePage() {
           <button className="rounded-lg border border-blush-300 px-4 py-2 text-sm text-plum-700 hover:bg-blush-100">
             خروج از حساب
           </button>
+          
         </form>
+                <Link
+          href="/orders"
+          className="rounded-lg border border-blush-300 px-4 py-2 text-sm text-plum-700 hover:bg-blush-100"
+        >
+          سفارش‌های من
+        </Link>
       </div>
     </div>
   );
