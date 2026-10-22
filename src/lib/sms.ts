@@ -1,5 +1,5 @@
 export async function sendSms(phone: string, code: string) {
-  if (process.env.NODE_ENV !== "production") {
+  if (process.env.NODE_ENV !== "production" || process.env.SMS_DEBUG === "1") {
     console.log(`📱 کد تأیید برای ${phone}: ${code}`);
     return;
   }
